@@ -1,0 +1,94 @@
+@import 'tailwindcss';
+
+@theme {
+  /* Typography */
+  --font-sans: 'Inter', 'Noto Sans Kannada', system-ui, -apple-system, sans-serif;
+  --font-display: 'Fraunces', 'Noto Sans Kannada', Georgia, serif;
+  --font-kannada: 'Noto Sans Kannada', 'Inter', sans-serif;
+
+  /* Warm off-white canvas */
+  --color-canvas-50: #fdfbf7;
+  --color-canvas-100: #faf6ef;
+  --color-canvas-200: #f3ecdf;
+  --color-canvas-300: #e9dfcc;
+
+  /* Forest green accents */
+  --color-forest-50: #eff5f0;
+  --color-forest-100: #dcebe0;
+  --color-forest-200: #b7d3c1;
+  --color-forest-300: #8ab59a;
+  --color-forest-400: #5a9675;
+  --color-forest-500: #3b7a58;
+  --color-forest-600: #2d6145;
+  --color-forest-700: #234e38;
+  --color-forest-800: #1a3a2b;
+  --color-forest-900: #12291e;
+
+  /* Warm neutrals for text */
+  --color-ink-900: #1f2a24;
+  --color-ink-700: #3d4a43;
+  --color-ink-500: #64726a;
+  --color-ink-400: #8b9791;
+
+  /* Amber accent, used sparingly */
+  --color-amber-soft: #e8a13c;
+
+  /* Soft shadows */
+  --shadow-soft: 0 1px 2px rgb(18 41 30 / 0.04), 0 4px 12px rgb(18 41 30 / 0.05);
+  --shadow-lifted:
+    0 2px 4px rgb(18 41 30 / 0.04), 0 12px 32px rgb(18 41 30 / 0.09), 0 1px 0
+      rgb(255 255 255 / 0.6) inset;
+
+  /* Motion */
+  --animate-fade-up: fade-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-pulse-ring: pulse-ring 2.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+
+  @keyframes fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes pulse-ring {
+    0% {
+      transform: scale(1);
+      opacity: 0.35;
+    }
+    100% {
+      transform: scale(1.9);
+      opacity: 0;
+    }
+  }
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+body {
+  @apply bg-canvas-100 font-sans text-ink-900 antialiased;
+}
+
+::selection {
+  background: #b7d3c1;
+  color: #12291e;
+}
