@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import {
   ArrowLeftRight,
   ChevronDown,
@@ -22,9 +22,11 @@ import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 import { translateToKannada } from '../services/geminiTranslator'
 import { speakKannada, stopSpeaking } from '../services/speechSynthesis'
 import {
-  evaluateTranscript,
+  detectUncertainty,
   evaluateUnfinalizedText,
-} from '../lib/transcriptValidation'
+  type UncertaintyFinding,
+} from '../lib/uncertaintyDetection'
+import { UncertaintyReviewCard } from './UncertaintyReviewCard'
 
 const SOURCE_LANGUAGES = ['English', 'Hindi'] as const
 const TARGET_LANGUAGE = 'Kannada' as const
@@ -40,8 +42,17 @@ export function TranslatorPanel() {
   const [isTranslating, setIsTranslating] = useState(false)
   const [isPlayingAudio, setIsPlayingAudio] = useState(false)
   const [copied, setCopied] = useState(false)
-  const [needsReview, setNeedsReview] = useState(false)
   const [messageTone, setMessageTone] = useState<MessageTone>('default')
+  /**
+   * Active Smart Uncertainty Detection review: the user must confirm or
+   * correct the recognized text before anything is translated or spoken.
+   */
+  const [review, setReview] = useState<{
+    reason: string
+    finding: UncertaintyFinding | null
+  } | null>(null)
+  const sourceTextRef = useRef<HTMLTextAreaElement>(null)
+  const needsReview = review !== null
 
   const showMessage = (text: string, tone: MessageTone = 'default') => {
     setMessage(text)
@@ -92,20 +103,21 @@ export function TranslatorPanel() {
     onTranscriptChange: (current) => {
       setInputValue(current)
     },
-    onFinalTranscript: (final, confidence) => {
+    onFinalTranscript: (final, confidence, alternatives) => {
       setInputValue(final)
 
-      // Smart Conversation Rescue: validate the final transcript using
+      // Smart Uncertainty Detection: validate the final transcript using
       // only genuinely available signals (real engine confidence, empty
-      // results, unusable punctuation-only results).
-      const check = evaluateTranscript(final, confidence)
-      if (check.status === 'needs-review') {
-        // Pause automatic translation and ask the user to repeat or
-        // correct the sentence (the source textarea stays editable).
-        setNeedsReview(true)
-        showMessage(check.reason, 'attention')
-      } else if (check.status === 'empty') {
-        showMessage(check.reason, 'attention')
+      // results, punctuation-only results, and real disagreement between
+      // the engine's alternative transcripts).
+      const finding = detectUncertainty(final, confidence, alternatives)
+      if (finding.level === 'review') {
+        // Pause automatic translation (and therefore speech playback) and
+        // ask the user to resolve the uncertainty first; the source
+        // textarea stays editable.
+        setReview({ reason: finding.reason ?? '', finding })
+      } else if (finding.level === 'empty') {
+        showMessage(finding.reason ?? '', 'attention')
       } else {
         void handleTranslate(final)
       }
@@ -118,8 +130,25 @@ export function TranslatorPanel() {
   const confirmAndTranslate = async () => {
     // The user confirmed the (possibly corrected) text — clear the
     // review state and translate what is currently in the field.
-    setNeedsReview(false)
+    setReview(null)
     await handleTranslate()
+  }
+
+  /** Fill the field with a chosen alternative; confirmation is still required. */
+  const chooseAlternative = (transcript: string) => {
+    setInputValue(transcript)
+    clearMessage()
+  }
+
+  const focusSourceText = () => {
+    sourceTextRef.current?.focus()
+  }
+
+  const handleRecordAgain = () => {
+    if (isListening) stopListening()
+    setReview(null)
+    showMessage(`Listening in ${sourceLanguage}... Speak clearly into your mic.`)
+    startListening(sourceLanguage)
   }
 
   const toggleListening = () => {
@@ -138,16 +167,15 @@ export function TranslatorPanel() {
           // Recording stopped before the engine finalized the sentence:
           // the text is likely incomplete, so pause and ask for review.
           const check = evaluateUnfinalizedText(inputValue)
-          if (check.status === 'needs-review') {
-            setNeedsReview(true)
-            showMessage(check.reason, 'attention')
+          if (check.level === 'review') {
+            setReview({ reason: check.reason, finding: null })
           }
         }
         // If a final result was already delivered, onFinalTranscript
         // above has already validated and translated it.
       }
     } else {
-      setNeedsReview(false)
+      setReview(null)
       showMessage(`Listening in ${sourceLanguage}... Speak clearly into your mic.`)
       startListening(sourceLanguage)
     }
@@ -207,7 +235,7 @@ export function TranslatorPanel() {
     setInputValue('')
     setOutputValue('')
     setTransliteration('')
-    setNeedsReview(false)
+    setReview(null)
     clearMessage()
   }
 
@@ -262,6 +290,7 @@ export function TranslatorPanel() {
               <div className="relative mt-4">
                 <textarea
                   id="source-text"
+                  ref={sourceTextRef}
                   value={inputValue}
                   onChange={(event) => setInputValue(event.target.value)}
                   onKeyDown={handleKeyDown}
@@ -446,6 +475,21 @@ export function TranslatorPanel() {
               </div>
             </div>
           </div>
+
+          {/* Smart Uncertainty Detection review */}
+          {review && (
+            <div className="border-t border-forest-900/6 bg-canvas-50/40 px-5 py-4 sm:px-7">
+              <UncertaintyReviewCard
+                finding={review.finding}
+                reason={review.reason}
+                isTranslating={isTranslating}
+                onChooseAlternative={chooseAlternative}
+                onEdit={focusSourceText}
+                onConfirm={() => void confirmAndTranslate()}
+                onRecordAgain={handleRecordAgain}
+              />
+            </div>
+          )}
 
           {/* Shared status strip */}
           <div className="border-t border-forest-900/6 bg-canvas-100/60 px-5 py-3.5 text-center sm:px-7">

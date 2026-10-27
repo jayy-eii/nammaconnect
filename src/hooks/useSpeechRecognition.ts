@@ -1,21 +1,28 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
+import type { SpeechAlternative } from '../lib/uncertaintyDetection'
 
-// Minimal interfaces for SpeechRecognition to satisfy TypeScript
+interface SpeechRecognitionAlternativeLike {
+  transcript: string
+  /**
+   * Real confidence (0–1) reported by the engine. Provided by
+   * Chrome/Edge; may be missing in other browsers, in which case
+   * it is exposed as undefined and never fabricated.
+   */
+  confidence?: number
+}
+
 interface SpeechRecognitionEventLike {
   resultIndex: number
   results: {
     length: number
     [index: number]: {
       isFinal: boolean
-      [index: number]: {
-        transcript: string
-        /**
-         * Real confidence (0–1) reported by the engine. Provided by
-         * Chrome/Edge; may be missing in other browsers, in which case
-         * it is exposed as undefined and never fabricated.
-         */
-        confidence?: number
-      }
+      /**
+       * Number of alternative transcripts the engine considered.
+       * May be absent — the code then treats it as exactly one.
+       */
+      length?: number
+      [index: number]: SpeechRecognitionAlternativeLike | undefined
     }
   }
 }
@@ -47,7 +54,16 @@ declare global {
 }
 
 interface UseSpeechRecognitionOptions {
-  onFinalTranscript?: (transcript: string, confidence?: number) => void
+  /**
+   * Called for each final result with the accumulated transcript, the
+   * engine-reported overall confidence (when the engine provides one),
+   * and the alternative transcripts (if the engine reported multiple).
+   */
+  onFinalTranscript?: (
+    transcript: string,
+    confidence?: number,
+    alternatives?: SpeechAlternative[],
+  ) => void
   onTranscriptChange?: (transcript: string) => void
   onError?: (error: string) => void
 }
@@ -118,12 +134,16 @@ export function useSpeechRecognition({
         let final = ''
         /** Engine-reported confidences for final results only (0–1). */
         const finalConfidences: Array<{ confidence: number; length: number }> = []
+        /** All alternatives the engine genuinely reported for final results. */
+        const finalAlternatives: SpeechAlternative[] = []
 
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const item = event.results[i]
           if (item.isFinal) {
-            final += item[0].transcript
-            const confidence = item[0].confidence
+            const primary = item[0]
+            if (!primary?.transcript) continue
+            final += primary.transcript
+            const confidence = primary.confidence
             // Only collect values the engine actually reported.
             if (
               typeof confidence === 'number' &&
@@ -132,11 +152,29 @@ export function useSpeechRecognition({
             ) {
               finalConfidences.push({
                 confidence,
-                length: item[0].transcript.length || 1,
+                length: primary.transcript.length || 1,
+              })
+            }
+
+            // Collect every alternative the engine considered (the primary
+            // at index 0 plus, when the engine reports them, the others).
+            const alternativeCount = item.length ?? 1
+            for (let j = 0; j < alternativeCount; j++) {
+              const alternative = item[j]
+              if (!alternative?.transcript) continue
+              const altConfidence = alternative.confidence
+              finalAlternatives.push({
+                transcript: alternative.transcript,
+                confidence:
+                  typeof altConfidence === 'number' &&
+                  Number.isFinite(altConfidence) &&
+                  altConfidence > 0
+                    ? altConfidence
+                    : undefined,
               })
             }
           } else {
-            interim += item[0].transcript
+            interim += item[0]?.transcript ?? ''
           }
         }
 
@@ -158,7 +196,11 @@ export function useSpeechRecognition({
                 0,
               ) / totalLength
           }
-          onFinalTranscript?.(accumulated, confidence)
+          onFinalTranscript?.(
+            accumulated,
+            confidence,
+            finalAlternatives.length > 1 ? finalAlternatives : undefined,
+          )
         } else if (interim) {
           const current = accumulated ? `${accumulated} ${interim}` : interim
           setTranscript(current)
