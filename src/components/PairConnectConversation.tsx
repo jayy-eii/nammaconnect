@@ -195,7 +195,12 @@ export function PairConnectConversation({
     onEndSession()
   }
 
-  const handlePlayAudio = (message: PairMessage, textToPlay: string, lang: PairLanguage) => {
+  const handlePlayAudio = (
+    message: PairMessage,
+    textToPlay: string,
+    lang: PairLanguage,
+    transliteration?: string | null,
+  ) => {
     if (playingMessageId === message.id) {
       stopSpeaking()
       setPlayingMessageId(null)
@@ -206,7 +211,7 @@ export function PairConnectConversation({
     const started = speakText(
       textToPlay,
       ttsLang,
-      message.transliteration || undefined,
+      transliteration || undefined,
       () => setPlayingMessageId(message.id),
       () => setPlayingMessageId(null),
       () => setPlayingMessageId(null),
@@ -304,10 +309,15 @@ export function PairConnectConversation({
           ) : (
             messages.map((message) => {
               const isMe =
-                message.sender_role === myRole ||
-                (myUserId && message.sender_id === myUserId)
+                (myUserId && message.sender_id === myUserId) ||
+                (!myUserId && message.sender_role === myRole)
               const isPlaying = playingMessageId === message.id
               const isCopied = copiedMessageId === message.id
+              const displayText = isMe ? message.original_text : message.translated_text
+              const shouldShowTransliteration =
+                !isMe &&
+                (myLanguage === 'Kannada' || myLanguage === 'Hindi') &&
+                Boolean(message.transliteration)
 
               return (
                 <div
@@ -319,7 +329,7 @@ export function PairConnectConversation({
                 >
                   {/* Sender label */}
                   <span className="mb-1 text-[11px] font-semibold text-ink-400 px-1">
-                    {isMe ? `You (${message.original_language})` : `Partner (${message.original_language})`}
+                    {isMe ? 'You' : 'Partner'}
                   </span>
 
                   {/* Message bubble */}
@@ -332,48 +342,35 @@ export function PairConnectConversation({
                     )}
                   >
                     {isMe ? (
-                      /* My message: show original_text prominently, with translated subtitle */
+                      /* My message: show original_text only (my own words, in my language) */
                       <div>
-                        <p className="text-[15px] font-medium leading-relaxed">
-                          {message.original_text}
+                        <p
+                          className={cn(
+                            'text-[15px] font-medium leading-relaxed',
+                            myLanguage.toLowerCase() === 'kannada' && 'font-kannada text-lg',
+                          )}
+                        >
+                          {displayText}
                         </p>
-                        {message.translated_text && (
-                          <div className="mt-2 pt-2 border-t border-white/15 text-xs text-canvas-100/90 flex flex-col gap-0.5">
-                            <span className="font-semibold text-emerald-300">
-                              → {message.translated_text}
-                            </span>
-                            {message.transliteration && (
-                              <span className="italic text-canvas-200 text-[11px]">
-                                "{message.transliteration}"
-                              </span>
-                            )}
-                          </div>
-                        )}
                       </div>
                     ) : (
-                      /* Peer message: show translated_text prominently for me, with original subtitle */
+                      /* Peer message: show translated_text ONLY, as the main text. */
                       <div>
                         <p
                           className={cn(
                             'text-[15px] font-semibold leading-relaxed text-forest-950',
-                            message.target_language.toLowerCase() === 'kannada' &&
+                            myLanguage.toLowerCase() === 'kannada' &&
                               'font-kannada text-lg',
                           )}
                         >
-                          {message.translated_text}
+                          {displayText}
                         </p>
 
-                        {message.transliteration && (
+                        {shouldShowTransliteration && (
                           <p className="mt-1 text-xs italic text-forest-700">
                             "{message.transliteration}"
                           </p>
                         )}
-
-                        <div className="mt-2 pt-2 border-t border-forest-900/8 text-xs text-ink-500">
-                          <span className="font-medium">
-                            Original: "{message.original_text}"
-                          </span>
-                        </div>
                       </div>
                     )}
 
@@ -395,8 +392,9 @@ export function PairConnectConversation({
                           onClick={() =>
                             handlePlayAudio(
                               message,
-                              isMe ? message.original_text : message.translated_text,
-                              isMe ? message.original_language : message.target_language,
+                              displayText,
+                              myLanguage,
+                              shouldShowTransliteration ? message.transliteration : undefined,
                             )
                           }
                           title="Listen to pronunciation"
@@ -416,12 +414,7 @@ export function PairConnectConversation({
                         </button>
                         <button
                           type="button"
-                          onClick={() =>
-                            handleCopy(
-                              message,
-                              isMe ? message.original_text : message.translated_text,
-                            )
-                          }
+                          onClick={() => handleCopy(message, displayText)}
                           title="Copy text"
                           className={cn(
                             'p-1 rounded-md transition-colors cursor-pointer',

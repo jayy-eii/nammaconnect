@@ -228,24 +228,34 @@ Deno.serve(async (req) => {
     const sourceLanguage: string = isHost ? room.host_language : (room.peer_language || 'Kannada')
     const targetLanguage: string = isHost ? (room.peer_language || 'Kannada') : room.host_language
 
-    // Translate text into the OTHER person's language with Gemini
-    const geminiApiKey = Deno.env.get('GEMINI_API_KEY') || ''
-    if (!geminiApiKey) {
-      return new Response(
-        JSON.stringify({ error: 'GEMINI_API_KEY is not configured on server' }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        },
-      )
-    }
+    let translation = text
+    let transliteration: string | null = null
 
-    const { translation, transliteration } = await translateWithGemini(
-      text,
-      sourceLanguage,
-      targetLanguage,
-      geminiApiKey,
-    )
+    // If sender language and receiver language are the same, skip Gemini and store translated_text = original_text
+    const isSameLanguage =
+      sourceLanguage.trim().toLowerCase() === targetLanguage.trim().toLowerCase()
+
+    if (!isSameLanguage) {
+      const geminiApiKey = Deno.env.get('GEMINI_API_KEY') || ''
+      if (!geminiApiKey) {
+        return new Response(
+          JSON.stringify({ error: 'GEMINI_API_KEY is not configured on server' }),
+          {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          },
+        )
+      }
+
+      const result = await translateWithGemini(
+        text,
+        sourceLanguage,
+        targetLanguage,
+        geminiApiKey,
+      )
+      translation = result.translation
+      transliteration = result.transliteration || null
+    }
 
     // Insert into pair_messages using service role client
     const { data: insertedMessage, error: insertError } = await adminClient
