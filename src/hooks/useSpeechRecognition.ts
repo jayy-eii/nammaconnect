@@ -123,6 +123,8 @@ export function useSpeechRecognition({
       // Map display language to SpeechRecognition BCP-47 language tag
       if (sourceLanguage.toLowerCase() === 'hindi') {
         recognition.lang = 'hi-IN'
+      } else if (sourceLanguage.toLowerCase() === 'kannada') {
+        recognition.lang = 'kn-IN'
       } else {
         recognition.lang = 'en-IN'
       }

@@ -1,9 +1,9 @@
 /**
- * High-fidelity Kannada speech synthesis utility.
+ * Speech synthesis utility for NammaConnect.
  *
- * Routes speech through the dedicated Kannada audio streaming endpoint (/api/tts)
- * which strips punctuation (preventing "question mark" glitches) and streams
- * authentic native Kannada MP3 audio.
+ * Supports Kannada, English, and Hindi text-to-speech.
+ * Routes speech through the local /api/tts endpoint with automatic fallback
+ * to direct TTS and native browser SpeechSynthesisUtterance.
  */
 
 let currentAudio: HTMLAudioElement | null = null
@@ -24,24 +24,27 @@ export function stopSpeaking(): void {
   }
 }
 
-export function speakKannada(
+export type SupportedTtsLang = 'kn' | 'en' | 'hi'
+
+export function speakText(
   text: string,
+  lang: SupportedTtsLang = 'kn',
   transliteration?: string,
   onStart?: () => void,
   onEnd?: () => void,
   onError?: (error: string) => void,
 ): boolean {
-  // Strip all punctuation marks (? . , ! etc.) so audio engines never pronounce "question mark"
+  // Strip punctuation marks (? . , ! etc.) so audio engines never pronounce "question mark"
   const speechText = text.replace(/[?.,!¿¡;:()]/g, ' ').replace(/\s+/g, ' ').trim()
   if (!speechText) return false
 
   stopSpeaking()
 
-  // 1. Primary: Use our local Vite /api/tts endpoint (fetches clean native Kannada MP3)
+  // 1. Primary: Use our local Vite /api/tts endpoint
   try {
     const encoded = encodeURIComponent(speechText)
-    const proxyUrl = `/api/tts?q=${encoded}`
-    const directUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=kn&client=tw-ob&q=${encoded}`
+    const proxyUrl = `/api/tts?q=${encoded}&lang=${lang}`
+    const directUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${lang}&client=tw-ob&q=${encoded}`
 
     const audio = new Audio(proxyUrl)
     currentAudio = audio
@@ -74,11 +77,11 @@ export function speakKannada(
       }
 
       fallbackAudio.onerror = () => {
-        fallbackWebSpeech(speechText, transliteration, onStart, onEnd, onError)
+        fallbackWebSpeech(speechText, lang, transliteration, onStart, onEnd, onError)
       }
 
       fallbackAudio.play().catch(() => {
-        fallbackWebSpeech(speechText, transliteration, onStart, onEnd, onError)
+        fallbackWebSpeech(speechText, lang, transliteration, onStart, onEnd, onError)
       })
     }
 
@@ -86,7 +89,6 @@ export function speakKannada(
     if (playPromise !== undefined) {
       playPromise.catch(() => {
         if (!hasStarted) {
-          // If autoplay prevented or proxy errored, try direct
           audio.onerror?.(new Event('error'))
         }
       })
@@ -94,19 +96,33 @@ export function speakKannada(
 
     return true
   } catch {
-    return fallbackWebSpeech(speechText, transliteration, onStart, onEnd, onError)
+    return fallbackWebSpeech(speechText, lang, transliteration, onStart, onEnd, onError)
   }
+}
+
+/**
+ * Convenience wrapper for speaking Kannada text (backwards compatible).
+ */
+export function speakKannada(
+  text: string,
+  transliteration?: string,
+  onStart?: () => void,
+  onEnd?: () => void,
+  onError?: (error: string) => void,
+): boolean {
+  return speakText(text, 'kn', transliteration, onStart, onEnd, onError)
 }
 
 function fallbackWebSpeech(
   speechText: string,
+  lang: SupportedTtsLang,
   transliteration?: string,
   onStart?: () => void,
   onEnd?: () => void,
   onError?: (error: string) => void,
 ): boolean {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
-    onError?.('Kannada audio voice is not available on this browser.')
+    onError?.('Speech playback is not supported on this browser.')
     onEnd?.()
     return false
   }
@@ -115,26 +131,28 @@ function fallbackWebSpeech(
     window.speechSynthesis.cancel()
 
     const voices = window.speechSynthesis.getVoices()
-    const kannadaVoice = voices.find(
+    const langPrefix = lang === 'hi' ? 'hi' : lang === 'en' ? 'en' : 'kn'
+    const targetVoice = voices.find(
       (v) =>
-        v.lang.toLowerCase().includes('kn') ||
-        v.name.toLowerCase().includes('kannada'),
+        v.lang.toLowerCase().startsWith(langPrefix) ||
+        v.name.toLowerCase().includes(lang === 'hi' ? 'hindi' : lang === 'en' ? 'english' : 'kannada'),
     )
 
-    // If no Kannada voice exists on this OS (common on Mac/Windows),
-    // speak the phonetic Roman transliteration (e.g. "En maadtidiya")
-    // so it pronounces the Kannada words correctly instead of saying "question mark"!
-    const textToSpeak = kannadaVoice
-      ? speechText
-      : (transliteration?.replace(/[?.,!¿¡;:()]/g, ' ').trim() || speechText)
+    let textToSpeak = speechText
+    if (lang === 'kn' && !targetVoice && transliteration) {
+      // If Kannada voice isn't installed on the OS, pronounce the phonetic transliteration
+      textToSpeak = transliteration.replace(/[?.,!¿¡;:()]/g, ' ').trim() || speechText
+    }
 
     const utterance = new SpeechSynthesisUtterance(textToSpeak)
-    if (kannadaVoice) {
-      utterance.voice = kannadaVoice
-      utterance.lang = 'kn-IN'
+    if (targetVoice) {
+      utterance.voice = targetVoice
+      utterance.lang = targetVoice.lang
     } else {
-      utterance.lang = 'en-IN'
-      utterance.rate = 0.85
+      utterance.lang = lang === 'hi' ? 'hi-IN' : lang === 'en' ? 'en-IN' : 'kn-IN'
+      if (lang === 'kn') {
+        utterance.rate = 0.85
+      }
     }
 
     utterance.onstart = () => {

@@ -13,6 +13,8 @@ import {
   Loader2,
   Sparkles,
   RotateCcw,
+  Edit3,
+  Camera,
 } from 'lucide-react'
 import { IconButton } from './ui/IconButton'
 import { Notice } from './ui/Notice'
@@ -27,11 +29,21 @@ import {
   type UncertaintyFinding,
 } from '../lib/uncertaintyDetection'
 import { UncertaintyReviewCard } from './UncertaintyReviewCard'
+import {
+  type ConversationEntry,
+  addConversationEntry,
+  updateConversationCorrection,
+} from '../services/conversationStorage'
+import { CorrectionModal } from './CorrectionModal'
 
 const SOURCE_LANGUAGES = ['English', 'Hindi'] as const
 const TARGET_LANGUAGE = 'Kannada' as const
 
-export function TranslatorPanel() {
+interface TranslatorPanelProps {
+  loadedEntry?: ConversationEntry | null
+}
+
+export function TranslatorPanel({ loadedEntry }: TranslatorPanelProps = {}) {
   type MessageTone = 'default' | 'attention' | 'error'
 
   const [sourceLanguage, setSourceLanguage] = useState<string>('English')
@@ -43,6 +55,9 @@ export function TranslatorPanel() {
   const [isPlayingAudio, setIsPlayingAudio] = useState(false)
   const [copied, setCopied] = useState(false)
   const [messageTone, setMessageTone] = useState<MessageTone>('default')
+  const [currentEntry, setCurrentEntry] = useState<ConversationEntry | null>(null)
+  const [isCorrectionModalOpen, setIsCorrectionModalOpen] = useState(false)
+  const [prevLoadedEntry, setPrevLoadedEntry] = useState<ConversationEntry | null>(null)
   /**
    * Active Smart Uncertainty Detection review: the user must confirm or
    * correct the recognized text before anything is translated or spoken.
@@ -53,6 +68,23 @@ export function TranslatorPanel() {
   } | null>(null)
   const sourceTextRef = useRef<HTMLTextAreaElement>(null)
   const needsReview = review !== null
+
+  // Adjust state during render when loadedEntry changes (React recommended pattern)
+  if (loadedEntry && loadedEntry !== prevLoadedEntry) {
+    setPrevLoadedEntry(loadedEntry)
+    setInputValue(loadedEntry.sourceText)
+    setSourceLanguage(loadedEntry.sourceLanguage)
+    const activeKannada =
+      loadedEntry.correctedTranslation?.kannada || loadedEntry.initialTranslation.kannada
+    const activeTranslit =
+      loadedEntry.correctedTranslation?.transliteration ||
+      loadedEntry.initialTranslation.transliteration ||
+      ''
+    setOutputValue(activeKannada)
+    setTransliteration(activeTranslit)
+    setCurrentEntry(loadedEntry)
+    setReview(null)
+  }
 
   const showMessage = (text: string, tone: MessageTone = 'default') => {
     setMessage(text)
@@ -80,7 +112,38 @@ export function TranslatorPanel() {
         const result = await translateToKannada(text, sourceLanguage)
         setOutputValue(result.kannada)
         setTransliteration(result.transliteration || '')
-        showMessage('Translation complete! You can listen or copy below.')
+        showMessage('Translation complete! You can listen, copy, or correct below.')
+
+        // Check if identical to the current entry to prevent duplicate entries on retry
+        if (
+          currentEntry &&
+          currentEntry.sourceText === text &&
+          currentEntry.sourceLanguage === sourceLanguage &&
+          currentEntry.initialTranslation.kannada === result.kannada
+        ) {
+          return
+        }
+
+        const entryId =
+          typeof crypto !== 'undefined' && crypto.randomUUID
+            ? crypto.randomUUID()
+            : `entry-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
+
+        const newEntry: ConversationEntry = {
+          id: entryId,
+          timestamp: Date.now(),
+          sourceText: text,
+          sourceLanguage,
+          targetLanguage: TARGET_LANGUAGE,
+          initialTranslation: {
+            kannada: result.kannada,
+            transliteration: result.transliteration || undefined,
+          },
+          correctionStatus: 'original',
+        }
+
+        setCurrentEntry(newEntry)
+        void addConversationEntry(newEntry)
       } catch (err: unknown) {
         const errMessage =
           err instanceof Error ? err.message : 'Translation error. Please check your network.'
@@ -89,7 +152,7 @@ export function TranslatorPanel() {
         setIsTranslating(false)
       }
     },
-    [inputValue, sourceLanguage],
+    [inputValue, sourceLanguage, currentEntry],
   )
 
   // Speech recognition hook
@@ -236,6 +299,7 @@ export function TranslatorPanel() {
     setOutputValue('')
     setTransliteration('')
     setReview(null)
+    setCurrentEntry(null)
     clearMessage()
   }
 
@@ -265,10 +329,20 @@ export function TranslatorPanel() {
             Choose your language, tap the microphone to speak, or type your message.
             We will translate and teach you how to pronounce it!
           </p>
+
+          <div className="mt-5 flex justify-center">
+            <a
+              href="#camera-translator"
+              className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-4 py-1.5 text-xs font-semibold text-emerald-800 ring-1 ring-emerald-500/20 hover:bg-emerald-100 transition-colors shadow-xs"
+            >
+              <Camera className="h-3.5 w-3.5 text-emerald-600" />
+              <span>Need to read a Kannada street sign or board? Try Camera Translator →</span>
+            </a>
+          </div>
         </div>
 
         {/* Panel */}
-        <div className="mt-10 overflow-hidden rounded-3xl bg-white/85 shadow-lifted ring-1 ring-forest-900/10 backdrop-blur-sm">
+        <div className="mt-10 overflow-hidden rounded-3xl bg-white shadow-lifted ring-1 ring-forest-900/10 backdrop-blur-sm">
           <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] md:items-start">
             {/* Source side */}
             <div className="p-5 sm:p-7">
@@ -296,7 +370,7 @@ export function TranslatorPanel() {
                   onKeyDown={handleKeyDown}
                   placeholder={
                     isListening
-                      ? 'Listening to your voice...'
+                      ? 'Listening to your voice... Speak clearly'
                       : `Type or click "Speak" to say something in ${sourceLanguage}...`
                   }
                   rows={5}
@@ -304,12 +378,12 @@ export function TranslatorPanel() {
                     'w-full resize-none rounded-2xl border-0 bg-canvas-100 px-4 py-3.5',
                     'text-[15px] leading-relaxed text-ink-900 ring-1 ring-forest-900/10',
                     'placeholder:text-ink-400',
-                    'transition-shadow duration-200 outline-none',
+                    'transition-all duration-200 outline-none',
                     isListening
-                      ? 'ring-2 ring-emerald-500 bg-emerald-50/30'
+                      ? 'ring-2 ring-rose-500 bg-rose-50/30'
                       : needsReview
                         ? 'ring-2 ring-amber-400 bg-amber-50/40'
-                        : 'focus:ring-2 focus:ring-forest-400',
+                        : 'focus:ring-2 focus:ring-forest-500 focus:bg-white',
                   )}
                 />
 
@@ -318,8 +392,8 @@ export function TranslatorPanel() {
                     type="button"
                     onClick={handleReset}
                     aria-label="Clear input"
-                    title="Clear"
-                    className="absolute top-3 right-3 text-ink-400 hover:text-ink-700 transition-colors p-1"
+                    title="Clear text"
+                    className="absolute top-3 right-3 text-ink-400 hover:text-ink-700 transition-colors p-1.5 rounded-lg hover:bg-forest-900/5 cursor-pointer"
                   >
                     <RotateCcw className="h-4 w-4" />
                   </button>
@@ -349,7 +423,15 @@ export function TranslatorPanel() {
                         aria-hidden="true"
                       />
                       <MicOff className="h-4 w-4 relative z-10" />
-                      <span className="relative z-10">Stop (Listening...)</span>
+                      <span className="relative z-10 flex items-center gap-1.5">
+                        <span>Listening...</span>
+                        {/* Live voice wave indicator */}
+                        <span className="flex items-center gap-0.5">
+                          <span className="h-2 w-0.5 rounded-full bg-white animate-pulse" />
+                          <span className="h-3.5 w-0.5 rounded-full bg-white animate-pulse [animation-delay:150ms]" />
+                          <span className="h-2.5 w-0.5 rounded-full bg-white animate-pulse [animation-delay:300ms]" />
+                        </span>
+                      </span>
                     </>
                   ) : (
                     <>
@@ -372,7 +454,7 @@ export function TranslatorPanel() {
                       ? () => void confirmAndTranslate()
                       : () => void handleTranslate()
                   }
-                  className="h-12 text-sm"
+                  className="h-12 text-sm shadow-soft"
                 >
                   {isTranslating ? (
                     <>
@@ -394,8 +476,8 @@ export function TranslatorPanel() {
               className="relative mx-7 self-center max-md:hidden"
               aria-hidden="true"
             >
-              <div className="h-[280px] w-px bg-gradient-to-b from-transparent via-forest-900/12 to-transparent" />
-              <div className="absolute top-1/2 left-1/2 flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-forest-800 text-canvas-50 shadow-soft">
+              <div className="h-[280px] w-px bg-gradient-to-b from-transparent via-forest-900/15 to-transparent" />
+              <div className="absolute top-1/2 left-1/2 flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-forest-800 text-canvas-50 shadow-soft ring-4 ring-white">
                 <ArrowLeftRight className="h-4 w-4" strokeWidth={2} />
               </div>
             </div>
@@ -405,7 +487,15 @@ export function TranslatorPanel() {
 
             {/* Target side */}
             <div className="p-5 sm:p-7">
-              <PanelLabel icon={Languages} text="In Kannada" />
+              <div className="flex items-center justify-between mb-3">
+                <PanelLabel icon={Languages} text="In Kannada" />
+                {currentEntry?.correctionStatus === 'corrected' && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-800 ring-1 ring-emerald-500/25">
+                    <Check className="h-3 w-3" />
+                    Corrected
+                  </span>
+                )}
+              </div>
               <LanguageSelector
                 id="target-language"
                 label="Target language"
@@ -431,8 +521,8 @@ export function TranslatorPanel() {
                   aria-readonly="true"
                   className={cn(
                     'w-full resize-none rounded-2xl border-0 bg-forest-900/[0.035] px-4 py-3.5',
-                    'font-kannada text-lg leading-relaxed text-forest-900 font-medium',
-                    'ring-1 ring-forest-900/10 placeholder:text-ink-400',
+                    'font-kannada text-xl sm:text-2xl leading-relaxed text-forest-900 font-semibold',
+                    'ring-1 ring-forest-900/10 placeholder:text-ink-400 placeholder:text-base placeholder:font-normal',
                     'cursor-default outline-none',
                   )}
                 />
@@ -440,16 +530,18 @@ export function TranslatorPanel() {
 
               {/* Transliteration Guide (Pronunciation) */}
               {transliteration && (
-                <div className="mt-3 rounded-xl bg-forest-50/80 px-3.5 py-2 ring-1 ring-forest-900/8 text-xs">
-                  <span className="font-semibold text-forest-700">Pronunciation: </span>
-                  <span className="font-medium text-ink-700 italic">
-                    "{transliteration}"
-                  </span>
+                <div className="mt-3 rounded-2xl bg-forest-100/70 p-3 ring-1 ring-forest-700/15 text-xs flex items-center justify-between gap-2">
+                  <div>
+                    <span className="font-semibold text-forest-800">Phonetic Guide: </span>
+                    <span className="font-medium text-ink-700 italic ml-1">
+                      "{transliteration}"
+                    </span>
+                  </div>
                 </div>
               )}
 
-              {/* Playback and copy */}
-              <div className="mt-4 flex items-center gap-2.5">
+              {/* Playback, copy, and correction */}
+              <div className="mt-4 flex flex-wrap items-center gap-2.5">
                 <IconButton
                   label={isPlayingAudio ? 'Stop audio' : 'Play Kannada audio'}
                   icon={isPlayingAudio ? VolumeX : Volume2}
@@ -467,9 +559,30 @@ export function TranslatorPanel() {
                   onClick={() => void handleCopy()}
                   className={cn(copied && 'bg-emerald-100 text-emerald-800')}
                 />
+
+                {outputValue && currentEntry && (
+                  <button
+                    type="button"
+                    onClick={() => setIsCorrectionModalOpen(true)}
+                    className="inline-flex cursor-pointer items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold text-forest-800 bg-white ring-1 ring-forest-900/12 hover:bg-forest-50 hover:ring-forest-900/20 transition-all shadow-xs"
+                    title={
+                      currentEntry.correctionStatus === 'corrected'
+                        ? 'Edit your correction'
+                        : 'Correct this translation'
+                    }
+                  >
+                    <Edit3 className="h-3.5 w-3.5 text-forest-600" />
+                    <span>
+                      {currentEntry.correctionStatus === 'corrected'
+                        ? 'Edit Correction'
+                        : 'Correct Translation'}
+                    </span>
+                  </button>
+                )}
+
                 <span className="ml-1 text-xs font-medium text-ink-400">
                   {outputValue
-                    ? 'Listen to pronunciation or copy'
+                    ? 'Listen, copy, or correct translation'
                     : 'Actions activate when translated'}
                 </span>
               </div>
@@ -503,6 +616,26 @@ export function TranslatorPanel() {
           </div>
         </div>
       </div>
+
+      {/* Correction Modal */}
+      <CorrectionModal
+        entry={currentEntry}
+        isOpen={isCorrectionModalOpen}
+        onClose={() => setIsCorrectionModalOpen(false)}
+        onSave={async (id, payload) => {
+          const updated = await updateConversationCorrection(id, payload)
+          if (updated) {
+            setCurrentEntry(updated)
+            setOutputValue(
+              updated.correctedTranslation?.kannada || updated.initialTranslation.kannada,
+            )
+            setTransliteration(
+              updated.correctedTranslation?.transliteration || '',
+            )
+            showMessage('Translation correction saved to history!')
+          }
+        }}
+      />
     </section>
   )
 }

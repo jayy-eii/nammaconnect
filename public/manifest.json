@@ -1,0 +1,16 @@
+{
+  "name": "NammaConnect",
+  "short_name": "NammaConnect",
+  "description": "Speak Freely. Connect in Kannada with AI voice, camera scan, and offline survival kit.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FAF7F0",
+  "theme_color": "#173D2D",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

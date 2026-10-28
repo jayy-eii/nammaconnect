@@ -6,42 +6,54 @@
   --font-display: 'Fraunces', 'Noto Sans Kannada', Georgia, serif;
   --font-kannada: 'Noto Sans Kannada', 'Inter', sans-serif;
 
-  /* Warm off-white canvas */
-  --color-canvas-50: #fdfbf7;
-  --color-canvas-100: #faf6ef;
-  --color-canvas-200: #f3ecdf;
-  --color-canvas-300: #e9dfcc;
+  /* Warm off-white canvas: #FAF7F0 primary canvas */
+  --color-canvas-50: #ffffff;
+  --color-canvas-100: #faf7f0;
+  --color-canvas-200: #f2ede1;
+  --color-canvas-300: #e6eee5;
+  --color-canvas-sage: #e6eee5;
 
-  /* Forest green accents */
-  --color-forest-50: #eff5f0;
-  --color-forest-100: #dcebe0;
-  --color-forest-200: #b7d3c1;
-  --color-forest-300: #8ab59a;
-  --color-forest-400: #5a9675;
-  --color-forest-500: #3b7a58;
-  --color-forest-600: #2d6145;
-  --color-forest-700: #234e38;
-  --color-forest-800: #1a3a2b;
-  --color-forest-900: #12291e;
+  /* Forest green accents: Deep forest #173D2D, Primary #26734D, Soft sage #E6EEE5 */
+  --color-forest-50: #f2f7f2;
+  --color-forest-100: #e6eee5;
+  --color-forest-200: #c2d7c5;
+  --color-forest-300: #8eb795;
+  --color-forest-400: #4b9668;
+  --color-forest-500: #26734d;
+  --color-forest-600: #1f5f3e;
+  --color-forest-700: #1b4e35;
+  --color-forest-800: #173d2d;
+  --color-forest-900: #0e261c;
+  --color-forest-950: #071a13;
 
-  /* Warm neutrals for text */
-  --color-ink-900: #1f2a24;
-  --color-ink-700: #3d4a43;
-  --color-ink-500: #64726a;
-  --color-ink-400: #8b9791;
+  /* Warm neutrals for text: Muted text #64736A */
+  --color-ink-900: #14231b;
+  --color-ink-800: #1f3126;
+  --color-ink-700: #2a3c32;
+  --color-ink-600: #47574e;
+  --color-ink-500: #64736a;
+  --color-ink-400: #8a9990;
 
-  /* Amber accent, used sparingly */
-  --color-amber-soft: #e8a13c;
+  /* Accent warnings & errors: Amber #F4C66A, Accessible Red #D9383A */
+  --color-amber-soft: #f4c66a;
+  --color-amber-dark: #b87b14;
+  --color-ruby-soft: #fde8e8;
+  --color-ruby-500: #d9383a;
+  --color-ruby-600: #b92527;
 
-  /* Soft shadows */
-  --shadow-soft: 0 1px 2px rgb(18 41 30 / 0.04), 0 4px 12px rgb(18 41 30 / 0.05);
+  /* Soft and lifted shadows */
+  --shadow-soft: 0 1px 3px rgb(23 61 45 / 0.05), 0 4px 14px rgb(23 61 45 / 0.04);
   --shadow-lifted:
-    0 2px 4px rgb(18 41 30 / 0.04), 0 12px 32px rgb(18 41 30 / 0.09), 0 1px 0
-      rgb(255 255 255 / 0.6) inset;
+    0 4px 6px -1px rgb(23 61 45 / 0.04), 0 16px 36px -4px rgb(23 61 45 / 0.09), 0 1px 0
+      rgb(255 255 255 / 0.8) inset;
+  --shadow-card:
+    0 2px 8px rgb(23 61 45 / 0.04), 0 12px 28px -4px rgb(23 61 45 / 0.07);
+  --shadow-glow: 0 0 0 3px rgb(38 115 77 / 0.2);
 
   /* Motion */
   --animate-fade-up: fade-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
   --animate-pulse-ring: pulse-ring 2.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  --animate-soundwave: soundwave 1.2s ease-in-out infinite alternate;
 
   @keyframes fade-up {
     from {
@@ -62,6 +74,15 @@
     100% {
       transform: scale(1.9);
       opacity: 0;
+    }
+  }
+
+  @keyframes soundwave {
+    0% {
+      height: 6px;
+    }
+    100% {
+      height: 22px;
     }
   }
 }
@@ -89,6 +110,6 @@ body {
 }
 
 ::selection {
-  background: #b7d3c1;
-  color: #12291e;
+  background: #c2d7c5;
+  color: #0e261c;
 }
